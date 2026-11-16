@@ -1,0 +1,12 @@
+# Build products
+/build/
+/out/
+/compile_commands.json
+
+# Local tools and editors
+.vscode/
+.idea/
+
+# Generated experiment artefacts
+/results/
+!/results/.gitkeep
