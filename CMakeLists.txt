@@ -11,6 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(sfm_core
     src/agent.cpp
     src/simulation.cpp
+    src/run.cpp
     src/coarse_graining.cpp
     src/admissibility.cpp
 )
@@ -20,6 +21,10 @@ target_include_directories(sfm_core
 )
 
 target_compile_features(sfm_core PUBLIC cxx_std_20)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(sfm_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
 
 add_executable(sfm_sim src/main.cpp)
 target_link_libraries(sfm_sim PRIVATE sfm_core)
