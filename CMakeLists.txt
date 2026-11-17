@@ -38,6 +38,9 @@ if(SFM_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/config/bidirectional_fixed_vector_smoke.toml)
     add_executable(sfm_periodic_test tests/periodic_test.cpp)
     target_link_libraries(sfm_periodic_test PRIVATE sfm_core)
+    add_executable(sfm_close_encounter_test tests/close_encounter_test.cpp)
+    target_link_libraries(sfm_close_encounter_test PRIVATE sfm_core)
+    add_test(NAME close_encounter COMMAND sfm_close_encounter_test)
     add_test(NAME periodic COMMAND sfm_periodic_test
         ${CMAKE_CURRENT_SOURCE_DIR}/config/periodic_counterflow.toml
         ${CMAKE_CURRENT_SOURCE_DIR}/config/unidirectional_periodic.toml)

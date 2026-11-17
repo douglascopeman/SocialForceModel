@@ -305,6 +305,8 @@ void run_experiment(const RunConfig& config) {
             << "domain_height_m: " << config.domain.max_y - config.domain.min_y << '\n'
             << "seed: " << config.seed << '\n' << "agents: " << simulation.agent_count() << '\n'
             << "duration_s: " << config.duration_s << '\n' << "time_step_s: " << config.time_step_s << '\n'
+            << "pair_force_evaluations: " << simulation.encounter_statistics().pair_force_evaluations << '\n'
+            << "upward_tie_breaks: " << simulation.encounter_statistics().upward_tie_breaks << '\n'
             << "trajectory: trajectory.csv\nrender: final_state.svg\n";
 }
 

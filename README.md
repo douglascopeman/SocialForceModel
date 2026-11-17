@@ -151,6 +151,17 @@ Desired-speed dispersion remains configurable; set it to zero for an
 identical-speed control. The lane-analysis script is specific to balanced
 bidirectional populations and should not be used for this single-direction case.
 
+## Close encounters
+
+Exact collinear ties inside another pedestrian's anticipation segment choose
+the upward one-sided force limit. Nearby nonzero offsets retain their own force
+direction; the potential is evaluated without the old cancellation-induced
+zero-force region. Exact coincident positions and anticipation endpoints raise
+an explicit error. Each run's `summary.txt` records `pair_force_evaluations` and
+`upward_tie_breaks`; diagnostic force queries do not increment these counters.
+See [the convention and frequency-check configuration](docs/close-encounters.md)
+for details and reproduction instructions.
+
 ## Lane-formation experiments
 
 `config/lanes/` contains density comparisons and a shorter-anticipation example.

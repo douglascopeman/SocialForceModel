@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "sfm/geometry.hpp"
@@ -32,6 +33,7 @@ void Simulation::add_agent(Agent agent) {
 }
 std::size_t Simulation::agent_count() const noexcept { return agents_.size(); }
 const std::vector<Agent>& Simulation::agents() const noexcept { return agents_; }
+const EncounterStatistics& Simulation::encounter_statistics() const noexcept { return encounter_statistics_; }
 
 Vec2 Simulation::desired_direction(const Agent& agent) const noexcept {
     return sfm::desired_direction(agent.state());
@@ -56,34 +58,78 @@ double Simulation::perception_weight(Vec2 direction, Vec2 stimulus) const noexce
                                                                   : interactions_.rear_influence_weight;
 }
 
-Vec2 Simulation::pair_force(const Agent& subject, const Agent& other) const noexcept {
+Vec2 Simulation::pair_force(const Agent& subject, const Agent& other) const {
+    return evaluate_pair_force(subject, other).force;
+}
+
+Simulation::PairForceEvaluation Simulation::evaluate_pair_force(const Agent& subject, const Agent& other) const {
+    if (interactions_.pair_potential_amplitude_m2_per_s2 == 0.0) return {};
     // Choose one image and use it throughout the elliptical-distance gradient.
     const Vec2 r = minimum_image_displacement(subject.state().position - other.state().position, domain_);
-    const double distance = norm(r);
-    if (distance <= kEpsilon) {
-        return {};
+    if (r.x == 0.0 && r.y == 0.0) {
+        throw std::domain_error("coincident positions in pair interaction between agents " +
+                                std::to_string(subject.state().id) + " and " + std::to_string(other.state().id));
     }
-    const Vec2 other_direction = desired_direction(other);
-    const double stride = norm(other.state().velocity) * interactions_.anticipation_time_s;
-    const Vec2 anticipated_displacement = r - stride * other_direction;
-    const double anticipated_distance = norm(anticipated_displacement);
-    const double sum_distance = distance + anticipated_distance;
-    const double radicand = sum_distance * sum_distance - stride * stride;
-    if (radicand <= kEpsilon) {
-        return {};
+    const double stride = std::hypot(other.state().velocity.x, other.state().velocity.y) *
+                          interactions_.anticipation_time_s;
+    double b{};
+    Vec2 gradient_b{};
+    bool used_tie_break = false;
+    if (stride == 0.0) {
+        b = std::hypot(r.x, r.y);
+        gradient_b = r * (1.0 / b);
+    } else {
+        const Vec2 direction = desired_direction(other);
+        if (direction.x == 0.0 && direction.y == 0.0) {
+            throw std::domain_error("moving pedestrian has no desired direction in pair interaction");
+        }
+        const Vec2 normal{-direction.y, direction.x};
+        const double x = dot(r, direction);
+        const double y = dot(r, normal);
+        const double remaining = stride - x;
+        const double distance = std::hypot(x, y);
+        const double anticipated_distance = std::hypot(remaining, y);
+        if (distance == 0.0 || anticipated_distance == 0.0) {
+            throw std::domain_error("singular anticipation endpoint in pair interaction between agents " +
+                                    std::to_string(subject.state().id) + " and " + std::to_string(other.state().id));
+        }
+        const double sum = distance + anticipated_distance;
+        const double coefficient = 1.0 / (distance + std::abs(x)) +
+                                   1.0 / (anticipated_distance + std::abs(remaining));
+        // Rationalise (distance + anticipated_distance - stride) to avoid
+        // subtracting nearly equal numbers as the ellipse collapses.
+        const double transverse_scale = 0.5 * std::sqrt((sum + stride) * coefficient);
+        if (x > 0.0 && remaining > 0.0) {
+            b = std::abs(y) * transverse_scale;
+            if (y == 0.0) {
+                // One-sided limit inside the segment, with global +y preferred.
+                Vec2 upward = normal;
+                if (upward.y < 0.0 || (upward.y == 0.0 && upward.x < 0.0)) upward = -upward;
+                gradient_b = (stride / (2.0 * std::sqrt(x) * std::sqrt(remaining))) * upward;
+                used_tie_break = true;
+            } else {
+                // Algebraically equivalent gradient without cancellation or 1/|y|.
+                const double factor = sum / (4.0 * transverse_scale);
+                const double longitudinal = factor * std::abs(y) * (x - remaining) * stride /
+                    (distance * anticipated_distance * (x * anticipated_distance + remaining * distance));
+                const double transverse = std::copysign(factor * (1.0 / distance + 1.0 / anticipated_distance), y);
+                gradient_b = longitudinal * direction + transverse * normal;
+            }
+        } else {
+            const double gap = 2.0 * std::max(-x, -remaining);
+            b = std::hypot(0.5 * std::sqrt((sum + stride) * gap), std::abs(y) * transverse_scale);
+            const double factor = sum / (4.0 * b);
+            gradient_b = (factor * (x / distance - remaining / anticipated_distance)) * direction +
+                         (factor * (y / distance + y / anticipated_distance)) * normal;
+        }
     }
-    const double b = 0.5 * std::sqrt(radicand);
-    if (b <= kEpsilon || anticipated_distance <= kEpsilon) {
-        return {};
-    }
-
-    // Gradient of b from eq. (4), then -grad[V0 exp(-b/sigma)] from eq. (3).
-    const Vec2 gradient_b = (sum_distance / (4.0 * b)) *
-                            (r * (1.0 / distance) + anticipated_displacement * (1.0 / anticipated_distance));
     const double potential = interactions_.pair_potential_amplitude_m2_per_s2 *
                              std::exp(-b / interactions_.pair_range_m);
     const Vec2 force = (potential / interactions_.pair_range_m) * gradient_b;
-    return perception_weight(desired_direction(subject), -force) * force;
+    if (!std::isfinite(force.x) || !std::isfinite(force.y)) {
+        throw std::domain_error("nonfinite pair force in close encounter");
+    }
+    return {perception_weight(desired_direction(subject), -force) * force, used_tie_break};
 }
 
 Vec2 Simulation::wall_force(const Agent& agent) const noexcept {
@@ -131,7 +177,10 @@ void Simulation::step(double time_step_s) {
         total_forces[i] = driving_force(agents_[i]) + wall_force(agents_[i]);
         for (std::size_t j = 0; j < agents_.size(); ++j) {
             if (i != j) {
-                total_forces[i] += pair_force(agents_[i], agents_[j]);
+                const auto evaluation = evaluate_pair_force(agents_[i], agents_[j]);
+                total_forces[i] += evaluation.force;
+                ++encounter_statistics_.pair_force_evaluations;
+                if (evaluation.used_upward_tie_break) ++encounter_statistics_.upward_tie_breaks;
             }
         }
     }
