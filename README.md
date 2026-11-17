@@ -38,5 +38,23 @@ ctest --test-dir build --output-on-failure
 ./build/sfm_sim config/example.toml
 ```
 
-The executable currently establishes the application seam only. Numerical
-implementation begins with the validated force law and integrator milestone.
+## Run a visual smoke experiment
+
+```bash
+./build/sfm_sim config/bidirectional_smoke.toml
+```
+
+This runs a deterministic 40-agent, bidirectional open-channel scenario and
+writes the following ignored artefacts to `results/bidirectional-smoke/`:
+
+- `trajectory.csv` — sampled microscopic state (`x`, `y`, realized velocity,
+  and preferred velocity) for every agent;
+- `summary.txt` — run identity and numerical settings;
+- `final_state.svg` — simple final-state render (blue agents target right; red
+  agents target left).
+- `frame_*.svg` — timestamped renders at the configured output interval.
+
+The configuration reader intentionally supports only the scalar TOML fields
+used by the supplied example configurations. Unsupported keys are ignored at
+this stage; a full TOML library or schema validation is a later engineering
+decision.
