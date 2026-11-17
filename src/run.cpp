@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "sfm/simulation.hpp"
+#include "sfm/geometry.hpp"
 
 namespace sfm {
 namespace {
@@ -62,6 +63,11 @@ void apply_value(RunConfig& config, const std::string& section, const std::strin
         else if (boundary == "walls") config.domain.boundary_x = BoundaryX::walls;
         else if (boundary == "periodic") config.domain.boundary_x = BoundaryX::periodic;
         else throw std::runtime_error("domain.boundary_x must be open, walls, or periodic");
+    } else if (full_key == "domain.boundary_y") {
+        const auto boundary = unquote(value);
+        if (boundary == "walls") config.domain.boundary_y = BoundaryY::walls;
+        else if (boundary == "periodic") config.domain.boundary_y = BoundaryY::periodic;
+        else throw std::runtime_error("domain.boundary_y must be walls or periodic");
     } else if (full_key == "agents.count") config.agent_count = static_cast<int>(as_double(value, full_key));
     else if (full_key == "agents.initial_placement") config.initial_placement = unquote(value);
     else if (full_key == "agents.initial_minimum_separation_m") config.initial_minimum_separation_m = as_double(value, full_key);
@@ -96,18 +102,20 @@ void validate(const RunConfig& config) {
         config.maximum_speed_factor <= 0.0) {
         throw std::runtime_error("run configuration contains a non-positive required value");
     }
-    if (config.scenario != "bidirectional") {
-        throw std::runtime_error("only scenario.type = \"bidirectional\" is currently supported");
+    if (config.scenario != "bidirectional" && config.scenario != "unidirectional") {
+        throw std::runtime_error("scenario.type must be bidirectional or unidirectional");
     }
     if (config.initial_placement != "end_groups" && config.initial_placement != "uniform") {
         throw std::runtime_error("agents.initial_placement must be end_groups or uniform");
     }
-    if (config.domain.max_x <= config.domain.min_x || config.domain.max_y - config.domain.min_y <= 1.0 ||
+    const double minimum_height = config.domain.boundary_y == BoundaryY::periodic ? 0.0 : 1.0;
+    if (config.domain.max_x <= config.domain.min_x || config.domain.max_y - config.domain.min_y <= minimum_height ||
         config.initial_minimum_separation_m < 0.0) {
-        throw std::runtime_error("initial placement requires positive width, height > 1 m and nonnegative separation");
+        throw std::runtime_error("initial placement requires positive extents, space for wall margins and nonnegative separation");
     }
-    if (config.domain.boundary_x == BoundaryX::periodic && config.direction_mode != DirectionMode::fixed_vector) {
-        throw std::runtime_error("periodic x boundaries require scenario.direction_mode = fixed_vector");
+    if ((config.domain.boundary_x == BoundaryX::periodic || config.domain.boundary_y == BoundaryY::periodic) &&
+        config.direction_mode != DirectionMode::fixed_vector) {
+        throw std::runtime_error("periodic boundaries require scenario.direction_mode = fixed_vector");
     }
 }
 
@@ -138,7 +146,8 @@ void write_svg(const std::filesystem::path& path, const RunConfig& config, const
         << "\" height=\"" << plot_height << "\" fill=\"#f8fafc\"/>\n";
     for (double y : {plot_top, plot_top + plot_height}) {
         svg << "<line x1=\"30\" x2=\"930\" y1=\"" << y << "\" y2=\"" << y
-            << "\" stroke=\"#334155\" stroke-width=\"2\"/>\n";
+            << "\" stroke=\"#334155\" stroke-width=\"2\""
+            << (config.domain.boundary_y == BoundaryY::periodic ? " stroke-dasharray=\"6 5\"" : "") << "/>\n";
     }
     for (double x : {margin, width - margin}) {
         svg << "<line x1=\"" << x << "\" x2=\"" << x << "\" y1=\"" << plot_top
@@ -161,7 +170,8 @@ void write_svg(const std::filesystem::path& path, const RunConfig& config, const
         << " s — blue: right, red: left</text>\n"
         << "<text x=\"30\" y=\"48\" font-family=\"sans-serif\" font-size=\"13\" fill=\"#475569\">"
         << "x boundaries: " << boundary_x_name(config.domain.boundary_x)
-        << "; top/bottom: repulsive walls; tails show velocity (0.3 s scale)</text>\n</svg>\n";
+        << "; y boundaries: " << boundary_y_name(config.domain.boundary_y)
+        << "; lines show velocity (0.3 s scale)</text>\n</svg>\n";
 }
 
 }  // namespace
@@ -208,11 +218,12 @@ std::vector<Agent> create_population(const RunConfig& config) {
     std::mt19937 generator(config.seed);
     std::normal_distribution<double> speed_distribution(
         config.desired_speed_mean_m_per_s, std::max(config.desired_speed_stddev_m_per_s, kEpsilon));
-    std::uniform_real_distribution<double> y_distribution(config.domain.min_y + 0.5, config.domain.max_y - 0.5);
+    const double y_margin = config.domain.boundary_y == BoundaryY::periodic ? 0.0 : 0.5;
+    std::uniform_real_distribution<double> y_distribution(config.domain.min_y + y_margin, config.domain.max_y - y_margin);
     std::uniform_real_distribution<double> x_offset(0.5, 3.0);
     std::uniform_real_distribution<double> uniform_x(config.domain.min_x, config.domain.max_x);
     for (int index = 0; index < config.agent_count; ++index) {
-        const bool rightward = index % 2 == 0;
+        const bool rightward = config.scenario == "unidirectional" || index % 2 == 0;
         const double speed = std::max(0.1, config.desired_speed_stddev_m_per_s == 0.0
                                               ? config.desired_speed_mean_m_per_s : speed_distribution(generator));
         double x = rightward ? config.domain.min_x + x_offset(generator)
@@ -226,11 +237,7 @@ std::vector<Agent> create_population(const RunConfig& config) {
                 y = y_distribution(generator);
                 placed = true;
                 for (const auto& other : population) {
-                    Vec2 delta = Vec2{x, y} - other.state().position;
-                    if (config.domain.boundary_x == BoundaryX::periodic) {
-                        const double length = config.domain.max_x - config.domain.min_x;
-                        delta.x -= length * std::round(delta.x / length);
-                    }
+                    const Vec2 delta = minimum_image_displacement(Vec2{x, y} - other.state().position, config.domain);
                     if (squared_norm(delta) < config.initial_minimum_separation_m * config.initial_minimum_separation_m) {
                         placed = false;
                         break;
@@ -292,6 +299,7 @@ void run_experiment(const RunConfig& config) {
     summary << "name: " << config.name << '\n' << "scenario: " << config.scenario << '\n'
             << "direction_mode: " << (config.direction_mode == DirectionMode::fixed_vector ? "fixed_vector" : "goal_point") << '\n'
             << "boundary_x: " << boundary_x_name(config.domain.boundary_x) << '\n'
+            << "boundary_y: " << boundary_y_name(config.domain.boundary_y) << '\n'
             << "initial_placement: " << config.initial_placement << '\n'
             << "domain_width_m: " << config.domain.max_x - config.domain.min_x << '\n'
             << "domain_height_m: " << config.domain.max_y - config.domain.min_y << '\n'

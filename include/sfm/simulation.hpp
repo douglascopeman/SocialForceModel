@@ -26,7 +26,6 @@ class Simulation {
     [[nodiscard]] Vec2 desired_direction(const Agent& agent) const noexcept;
     [[nodiscard]] double perception_weight(Vec2 direction, Vec2 stimulus) const noexcept;
     [[nodiscard]] Vec2 realized_velocity(Vec2 preferred_velocity, double maximum_speed) const noexcept;
-    [[nodiscard]] double wrapped_x(double x) const noexcept;
 
     RectangularDomain domain_;
     InteractionParameters interactions_;

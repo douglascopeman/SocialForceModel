@@ -3,6 +3,11 @@
 namespace sfm {
 
 enum class BoundaryX { open, walls, periodic };
+enum class BoundaryY { walls, periodic };
+
+constexpr const char* boundary_y_name(BoundaryY boundary) noexcept {
+    return boundary == BoundaryY::periodic ? "periodic" : "walls";
+}
 
 constexpr const char* boundary_x_name(BoundaryX boundary) noexcept {
     switch (boundary) {
@@ -29,6 +34,7 @@ struct RectangularDomain {
     double min_y{0.0};
     double max_y{10.0};
     BoundaryX boundary_x{BoundaryX::walls};
+    BoundaryY boundary_y{BoundaryY::walls};
     bool wall_bottom{true};
     bool wall_top{true};
 };

@@ -39,10 +39,13 @@ if(SFM_BUILD_TESTS)
     add_executable(sfm_periodic_test tests/periodic_test.cpp)
     target_link_libraries(sfm_periodic_test PRIVATE sfm_core)
     add_test(NAME periodic COMMAND sfm_periodic_test
-        ${CMAKE_CURRENT_SOURCE_DIR}/config/periodic_counterflow.toml)
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/periodic_counterflow.toml
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/unidirectional_periodic.toml)
     find_package(Python3 QUIET COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
         add_test(NAME lane_analysis COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lane_analysis.py)
+        add_test(NAME periodic_validation COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_periodic_validation.py)
     endif()
 endif()

@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "sfm/geometry.hpp"
+
 namespace sfm {
 
 Simulation::Simulation(RectangularDomain domain, InteractionParameters interactions)
@@ -19,21 +21,13 @@ Simulation::Simulation(RectangularDomain domain, InteractionParameters interacti
     }
 }
 
-double Simulation::wrapped_x(double x) const noexcept {
-    const double length = domain_.max_x - domain_.min_x;
-    double offset = std::fmod(x - domain_.min_x, length);
-    if (offset < 0.0) offset += length;
-    const double wrapped = domain_.min_x + offset;
-    return wrapped < domain_.max_x ? wrapped : domain_.min_x;
-}
-
 void Simulation::add_agent(Agent agent) {
-    if (domain_.boundary_x == BoundaryX::periodic) {
+    if (domain_.boundary_x == BoundaryX::periodic || domain_.boundary_y == BoundaryY::periodic) {
         if (agent.state().direction_mode != DirectionMode::fixed_vector) {
-            throw std::invalid_argument("periodic x boundaries require fixed_vector direction mode");
+            throw std::invalid_argument("periodic boundaries require fixed_vector direction mode");
         }
-        agent.state().position.x = wrapped_x(agent.state().position.x);
     }
+    agent.state().position = wrap_position(agent.state().position, domain_);
     agents_.push_back(std::move(agent));
 }
 std::size_t Simulation::agent_count() const noexcept { return agents_.size(); }
@@ -63,12 +57,8 @@ double Simulation::perception_weight(Vec2 direction, Vec2 stimulus) const noexce
 }
 
 Vec2 Simulation::pair_force(const Agent& subject, const Agent& other) const noexcept {
-    Vec2 r = subject.state().position - other.state().position;
-    if (domain_.boundary_x == BoundaryX::periodic) {
-        const double length = domain_.max_x - domain_.min_x;
-        // Choose one image and use it throughout the elliptical-distance gradient.
-        r.x -= length * std::round(r.x / length);
-    }
+    // Choose one image and use it throughout the elliptical-distance gradient.
+    const Vec2 r = minimum_image_displacement(subject.state().position - other.state().position, domain_);
     const double distance = norm(r);
     if (distance <= kEpsilon) {
         return {};
@@ -111,8 +101,10 @@ Vec2 Simulation::wall_force(const Agent& agent) const noexcept {
         consider({p.x - domain_.min_x, {1.0, 0.0}});
         consider({domain_.max_x - p.x, {-1.0, 0.0}});
     }
-    if (domain_.wall_bottom) consider({p.y - domain_.min_y, {0.0, 1.0}});
-    if (domain_.wall_top) consider({domain_.max_y - p.y, {0.0, -1.0}});
+    if (domain_.boundary_y == BoundaryY::walls) {
+        if (domain_.wall_bottom) consider({p.y - domain_.min_y, {0.0, 1.0}});
+        if (domain_.wall_top) consider({domain_.max_y - p.y, {0.0, -1.0}});
+    }
     if (!has_wall) {
         return {};
     }
@@ -149,9 +141,7 @@ void Simulation::step(double time_step_s) {
         state.velocity = realized_velocity(
             state.preferred_velocity, state.maximum_speed_factor * state.desired_speed_m_per_s);
         state.position += time_step_s * state.velocity;
-        if (domain_.boundary_x == BoundaryX::periodic) {
-            state.position.x = wrapped_x(state.position.x);
-        }
+        state.position = wrap_position(state.position, domain_);
     }
 }
 

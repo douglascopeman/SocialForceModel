@@ -91,7 +91,8 @@ Choose x boundaries in `[domain]` with `boundary_x = "open"`, `"walls"`, or
 `"periodic"`. Periodic boundaries wrap x into the domain after each step and use
 the nearest periodic image for pair interactions, including the elliptical
 anticipation term. Identity and velocity persist through a crossing; the agent
-count stays constant. Top and bottom retain their existing soft repulsive walls.
+count stays constant. Top and bottom retain soft repulsive walls by default;
+`boundary_y = "periodic"` connects those edges and removes their wall forces.
 The periodic domain uses a single nearest image, so choose a channel length
 well above interaction and anticipation distances.
 
@@ -121,6 +122,34 @@ and identities, and reports crossings inferred from sampled jumps. Renderings
 and these checks provide a qualitative boundary-condition smoke test;
 hydrodynamic admissibility and timestep convergence of this interacting case
 remain separate scientific checks.
+
+## Single-direction flow with periodic x and y
+
+```toml
+[domain]
+boundary_x = "periodic"
+boundary_y = "periodic" # Default: "walls".
+
+[scenario]
+type = "unidirectional" # Every desired direction is (1, 0).
+direction_mode = "fixed_vector"
+```
+
+The example configuration uses 80 pedestrians in a 20 m by 10 m periodic
+domain for 60 s, with uniform initial placement and no y wall margin:
+
+```bash
+./build/sfm_sim config/unidirectional_periodic.toml
+python3 scripts/check_periodic_run.py results/unidirectional-periodic --length 20 --height 10 --agents 80
+python3 scripts/animate_run.py results/unidirectional-periodic --fps 10
+```
+
+The renderer marks all four joins with dashed lines. Wrapping preserves agent
+identity and velocity, while pair forces and the initial minimum separation use
+nearest periodic images in both axes. The default scenario remains bidirectional.
+Desired-speed dispersion remains configurable; set it to zero for an
+identical-speed control. The lane-analysis script is specific to balanced
+bidirectional populations and should not be used for this single-direction case.
 
 ## Lane-formation experiments
 
