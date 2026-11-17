@@ -33,5 +33,7 @@ if(SFM_BUILD_TESTS)
     enable_testing()
     add_executable(sfm_smoke_test tests/smoke_test.cpp)
     target_link_libraries(sfm_smoke_test PRIVATE sfm_core)
-    add_test(NAME smoke COMMAND sfm_smoke_test)
+    add_test(NAME smoke COMMAND sfm_smoke_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/example.toml
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/bidirectional_fixed_vector_smoke.toml)
 endif()

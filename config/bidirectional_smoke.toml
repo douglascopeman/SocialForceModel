@@ -6,6 +6,7 @@ time_step_s = 0.01
 
 [scenario]
 type = "bidirectional"
+direction_mode = "goal_point" # Change to "fixed_vector" for constant horizontal headings.
 
 [domain]
 width_m = 20.0

@@ -4,12 +4,14 @@
 #include <string>
 
 #include "sfm/model.hpp"
+#include "sfm/types.hpp"
 
 namespace sfm {
 
 struct RunConfig {
     std::string name{"unnamed"};
     std::string scenario{"bidirectional"};
+    DirectionMode direction_mode{DirectionMode::goal_point};
     unsigned int seed{1};
     double duration_s{10.0};
     double time_step_s{0.01};

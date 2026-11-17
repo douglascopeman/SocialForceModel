@@ -41,6 +41,8 @@ inline Vec2 normalized(Vec2 value) noexcept {
     return length > kEpsilon ? value * (1.0 / length) : Vec2{};
 }
 
+enum class DirectionMode { goal_point, fixed_vector };
+
 struct AgentState {
     std::uint64_t id{};
     Vec2 position{};
@@ -50,6 +52,14 @@ struct AgentState {
     double desired_speed_m_per_s{1.34};
     double relaxation_time_s{0.5};
     double maximum_speed_factor{1.3};
+    DirectionMode direction_mode{DirectionMode::goal_point};
+    Vec2 fixed_direction{1.0, 0.0};
 };
+
+inline Vec2 desired_direction(const AgentState& state) noexcept {
+    return normalized(state.direction_mode == DirectionMode::fixed_vector
+                          ? state.fixed_direction
+                          : state.goal - state.position);
+}
 
 }  // namespace sfm

@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "sfm/simulation.hpp"
+#include "sfm/run.hpp"
 
 namespace {
 
@@ -23,9 +24,49 @@ sfm::Agent make_agent(std::uint64_t id, sfm::Vec2 position, sfm::Vec2 goal) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    require(argc == 3, "provide default-mode and fixed-vector configuration paths");
+    require(sfm::load_run_config(argv[1]).direction_mode == sfm::DirectionMode::goal_point,
+            "omitting the mode preserves goal-point steering");
+    require(sfm::load_run_config(argv[2]).direction_mode == sfm::DirectionMode::fixed_vector,
+            "configuration reader selects fixed-vector mode");
     const sfm::RectangularDomain domain{.min_x = -100.0, .max_x = 100.0, .min_y = -100.0, .max_y = 100.0};
 
+    {  // The objective changes steering after displacement, independently of the goal.
+        sfm::Simulation simulation(domain);
+        auto agent = make_agent(1, {0.0, 2.0}, {10.0, 0.0});
+        require(simulation.driving_force(agent).y < 0.0, "goal-point steering corrects lateral displacement");
+        agent.state().direction_mode = sfm::DirectionMode::fixed_vector;
+        agent.state().fixed_direction = {3.0, 0.0};
+        const auto force = simulation.driving_force(agent);
+        require(near(force.x, 2.68) && near(force.y, 0.0), "fixed direction is normalized without lateral steering");
+        agent.state().position = {20.0, -4.0};
+        require(near(simulation.driving_force(agent).x, force.x), "fixed heading persists beyond the goal point");
+        agent.state().fixed_direction = {-1.0, 0.0};
+        require(near(simulation.driving_force(agent).x, -2.68), "leftward fixed heading drives left");
+
+        agent.state().fixed_direction = {1.0, 0.0};
+        simulation.add_agent(agent);
+        for (int step = 0; step < 100; ++step) simulation.step(0.01);
+        require(near(simulation.agents()[0].state().position.y, -4.0),
+                "isolated fixed-vector trajectory has no lateral drift");
+    }
+    {  // Perception and elliptical anticipation must use the same selected heading.
+        sfm::Simulation simulation(domain);
+        auto subject = make_agent(1, {0.0, 0.0}, {-10.0, 0.0});
+        auto other = make_agent(2, {1.0, 0.4}, {-10.0, 0.4});
+        subject.state().direction_mode = sfm::DirectionMode::fixed_vector;
+        other.state().direction_mode = sfm::DirectionMode::fixed_vector;
+        other.state().velocity = {0.5, 0.0};
+        const auto fixed_force = simulation.pair_force(subject, other);
+        subject.state().direction_mode = sfm::DirectionMode::goal_point;
+        other.state().direction_mode = sfm::DirectionMode::goal_point;
+        subject.state().goal = {10.0, 0.0};
+        other.state().goal = {10.0, 0.4};
+        const auto goal_force = simulation.pair_force(subject, other);
+        require(sfm::norm(fixed_force) > 0.0 && near(fixed_force.x, goal_force.x) && near(fixed_force.y, goal_force.y),
+                "matching selected headings give identical pair forces regardless of mode");
+    }
     {  // An isolated pedestrian relaxes toward the desired velocity (paper eq. 2).
         sfm::Simulation simulation(domain);
         simulation.add_agent(make_agent(1, {0.0, 0.0}, {100.0, 0.0}));

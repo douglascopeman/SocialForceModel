@@ -66,6 +66,12 @@ void apply_value(RunConfig& config, const std::string& section, const std::strin
     else if (full_key == "output.render_interval_s") config.render_interval_s = as_double(value, full_key);
     else if (full_key == "output.directory") config.output_directory = unquote(value);
     else if (full_key == "scenario.type") config.scenario = unquote(value);
+    else if (full_key == "scenario.direction_mode") {
+        const std::string mode = unquote(value);
+        if (mode == "goal_point") config.direction_mode = DirectionMode::goal_point;
+        else if (mode == "fixed_vector") config.direction_mode = DirectionMode::fixed_vector;
+        else throw std::runtime_error("scenario.direction_mode must be goal_point or fixed_vector");
+    }
     else if (full_key == "interactions.pair_potential_amplitude_m2_per_s2") config.interactions.pair_potential_amplitude_m2_per_s2 = as_double(value, full_key);
     else if (full_key == "interactions.pair_range_m") config.interactions.pair_range_m = as_double(value, full_key);
     else if (full_key == "interactions.anticipation_time_s") config.interactions.anticipation_time_s = as_double(value, full_key);
@@ -114,7 +120,7 @@ void write_svg(const std::filesystem::path& path, const RunConfig& config, const
         const AgentState& state = agent.state();
         const double x = margin + (state.position.x - config.domain.min_x) * scale_x;
         const double y = height - margin - (state.position.y - config.domain.min_y) * scale_y;
-        const bool rightward = state.goal.x > state.position.x;
+        const bool rightward = desired_direction(state).x > 0.0;
         svg << "<circle cx=\"" << x << "\" cy=\"" << y << "\" r=\"5\" fill=\""
             << (rightward ? "#2563eb" : "#dc2626") << "\"/>\n";
     }
@@ -170,7 +176,9 @@ void run_experiment(const RunConfig& config) {
         simulation.add_agent(Agent({.id = static_cast<std::uint64_t>(index), .position = {x, y_distribution(generator)},
                                     .goal = goal, .desired_speed_m_per_s = speed,
                                     .relaxation_time_s = config.relaxation_time_s,
-                                    .maximum_speed_factor = config.maximum_speed_factor}));
+                                    .maximum_speed_factor = config.maximum_speed_factor,
+                                    .direction_mode = config.direction_mode,
+                                    .fixed_direction = {rightward ? 1.0 : -1.0, 0.0}}));
     }
 
     std::ofstream trajectory(config.output_directory / "trajectory.csv");
@@ -205,6 +213,7 @@ void run_experiment(const RunConfig& config) {
     std::ofstream summary(config.output_directory / "summary.txt");
     if (!summary) throw std::runtime_error("cannot write summary.txt");
     summary << "name: " << config.name << '\n' << "scenario: " << config.scenario << '\n'
+            << "direction_mode: " << (config.direction_mode == DirectionMode::fixed_vector ? "fixed_vector" : "goal_point") << '\n'
             << "seed: " << config.seed << '\n' << "agents: " << simulation.agent_count() << '\n'
             << "duration_s: " << config.duration_s << '\n' << "time_step_s: " << config.time_step_s << '\n'
             << "trajectory: trajectory.csv\nrender: final_state.svg\n";

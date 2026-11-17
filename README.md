@@ -58,3 +58,29 @@ The configuration reader intentionally supports only the scalar TOML fields
 used by the supplied example configurations. Unsupported keys are ignored at
 this stage; a full TOML library or schema validation is a later engineering
 decision.
+
+## Direction objective
+
+Set the direction mode in the configuration's existing `[scenario]` section:
+
+```toml
+[scenario]
+type = "bidirectional"
+direction_mode = "fixed_vector" # Or "goal_point" (the default when omitted).
+```
+
+`goal_point` steers each agent toward its assigned point beyond the channel end,
+recalculating its desired unit vector as it moves. `fixed_vector` assigns constant
+horizontal desired directions `(1, 0)` and `(-1, 0)` to the opposing populations.
+Interactions can still deflect their actual velocities. Both perception weighting
+and the elliptical anticipation calculation use the selected desired direction.
+Runs record the mode in `summary.txt`. Switching modes preserves the generated
+initial population for a given seed so that trajectories can be compared.
+
+For a separate comparison run without overwriting the original outputs:
+
+```bash
+./build/sfm_sim config/bidirectional_fixed_vector_smoke.toml
+```
+
+Outputs go to `results/bidirectional-fixed-vector-smoke/`.

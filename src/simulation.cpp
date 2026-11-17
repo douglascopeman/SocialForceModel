@@ -24,7 +24,7 @@ std::size_t Simulation::agent_count() const noexcept { return agents_.size(); }
 const std::vector<Agent>& Simulation::agents() const noexcept { return agents_; }
 
 Vec2 Simulation::desired_direction(const Agent& agent) const noexcept {
-    return normalized(agent.state().goal - agent.state().position);
+    return sfm::desired_direction(agent.state());
 }
 
 Vec2 Simulation::driving_force(const Agent& agent) const noexcept {
