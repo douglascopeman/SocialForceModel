@@ -6,4 +6,6 @@ Agent::Agent(AgentState state) : state_(state) {}
 
 const AgentState& Agent::state() const noexcept { return state_; }
 
+AgentState& Agent::state() noexcept { return state_; }
+
 }  // namespace sfm

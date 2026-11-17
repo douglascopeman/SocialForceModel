@@ -8,6 +8,7 @@ class Agent {
   public:
     explicit Agent(AgentState state);
     [[nodiscard]] const AgentState& state() const noexcept;
+    [[nodiscard]] AgentState& state() noexcept;
 
   private:
     AgentState state_;
