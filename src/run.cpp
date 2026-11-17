@@ -55,9 +55,16 @@ void apply_value(RunConfig& config, const std::string& section, const std::strin
     else if (full_key == "domain.height_m") config.domain.max_y = config.domain.min_y + as_double(value, full_key);
     else if (full_key == "domain.open_x") {
         const bool open = as_bool(value, full_key);
-        config.domain.wall_left = !open;
-        config.domain.wall_right = !open;
+        config.domain.boundary_x = open ? BoundaryX::open : BoundaryX::walls;
+    } else if (full_key == "domain.boundary_x") {
+        const auto boundary = unquote(value);
+        if (boundary == "open") config.domain.boundary_x = BoundaryX::open;
+        else if (boundary == "walls") config.domain.boundary_x = BoundaryX::walls;
+        else if (boundary == "periodic") config.domain.boundary_x = BoundaryX::periodic;
+        else throw std::runtime_error("domain.boundary_x must be open, walls, or periodic");
     } else if (full_key == "agents.count") config.agent_count = static_cast<int>(as_double(value, full_key));
+    else if (full_key == "agents.initial_placement") config.initial_placement = unquote(value);
+    else if (full_key == "agents.initial_minimum_separation_m") config.initial_minimum_separation_m = as_double(value, full_key);
     else if (full_key == "agents.desired_speed_mean_m_per_s" || full_key == "agents.desired_speed_m_per_s") config.desired_speed_mean_m_per_s = as_double(value, full_key);
     else if (full_key == "agents.desired_speed_stddev_m_per_s") config.desired_speed_stddev_m_per_s = as_double(value, full_key);
     else if (full_key == "agents.relaxation_time_s") config.relaxation_time_s = as_double(value, full_key);
@@ -92,6 +99,16 @@ void validate(const RunConfig& config) {
     if (config.scenario != "bidirectional") {
         throw std::runtime_error("only scenario.type = \"bidirectional\" is currently supported");
     }
+    if (config.initial_placement != "end_groups" && config.initial_placement != "uniform") {
+        throw std::runtime_error("agents.initial_placement must be end_groups or uniform");
+    }
+    if (config.domain.max_x <= config.domain.min_x || config.domain.max_y - config.domain.min_y <= 1.0 ||
+        config.initial_minimum_separation_m < 0.0) {
+        throw std::runtime_error("initial placement requires positive width, height > 1 m and nonnegative separation");
+    }
+    if (config.domain.boundary_x == BoundaryX::periodic && config.direction_mode != DirectionMode::fixed_vector) {
+        throw std::runtime_error("periodic x boundaries require scenario.direction_mode = fixed_vector");
+    }
 }
 
 void write_frame(std::ofstream& stream, double time, const Simulation& simulation) {
@@ -106,16 +123,28 @@ void write_frame(std::ofstream& stream, double time, const Simulation& simulatio
 void write_svg(const std::filesystem::path& path, const RunConfig& config, const Simulation& simulation,
                double time_s) {
     constexpr double width = 960.0;
-    constexpr double height = 480.0;
     constexpr double margin = 30.0;
+    constexpr double plot_top = 70.0;
     const double scale_x = (width - 2.0 * margin) / (config.domain.max_x - config.domain.min_x);
-    const double scale_y = (height - 2.0 * margin) / (config.domain.max_y - config.domain.min_y);
+    const double scale_y = scale_x;
+    const double plot_height = (config.domain.max_y - config.domain.min_y) * scale_y;
+    const double height = plot_top + plot_height + margin;
     std::ofstream svg(path);
     if (!svg) throw std::runtime_error("cannot write " + path.string());
-    svg << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"960\" height=\"480\" viewBox=\"0 0 960 480\">\n"
+    svg << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"960\" height=\"" << height
+        << "\" viewBox=\"0 0 960 " << height << "\">\n"
         << "<rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n"
-        << "<rect x=\"" << margin << "\" y=\"" << margin << "\" width=\"" << width - 2.0 * margin
-        << "\" height=\"" << height - 2.0 * margin << "\" fill=\"#f8fafc\" stroke=\"#334155\"/>\n";
+        << "<rect x=\"" << margin << "\" y=\"" << plot_top << "\" width=\"" << width - 2.0 * margin
+        << "\" height=\"" << plot_height << "\" fill=\"#f8fafc\"/>\n";
+    for (double y : {plot_top, plot_top + plot_height}) {
+        svg << "<line x1=\"30\" x2=\"930\" y1=\"" << y << "\" y2=\"" << y
+            << "\" stroke=\"#334155\" stroke-width=\"2\"/>\n";
+    }
+    for (double x : {margin, width - margin}) {
+        svg << "<line x1=\"" << x << "\" x2=\"" << x << "\" y1=\"" << plot_top
+            << "\" y2=\"" << plot_top + plot_height << "\" stroke=\"#64748b\""
+            << (config.domain.boundary_x == BoundaryX::walls ? "" : " stroke-dasharray=\"6 5\"") << "/>\n";
+    }
     for (const Agent& agent : simulation.agents()) {
         const AgentState& state = agent.state();
         const double x = margin + (state.position.x - config.domain.min_x) * scale_x;
@@ -123,10 +152,16 @@ void write_svg(const std::filesystem::path& path, const RunConfig& config, const
         const bool rightward = desired_direction(state).x > 0.0;
         svg << "<circle cx=\"" << x << "\" cy=\"" << y << "\" r=\"5\" fill=\""
             << (rightward ? "#2563eb" : "#dc2626") << "\"/>\n";
+        svg << "<line x1=\"" << x << "\" y1=\"" << y << "\" x2=\"" << x + 0.3 * state.velocity.x * scale_x
+            << "\" y2=\"" << y - 0.3 * state.velocity.y * scale_y
+            << "\" stroke=\"" << (rightward ? "#2563eb" : "#dc2626") << "\" stroke-width=\"2\"/>\n";
     }
-    svg << "<text x=\"36\" y=\"52\" font-family=\"sans-serif\" font-size=\"16\" fill=\"#0f172a\">"
+    svg << "<text x=\"30\" y=\"25\" font-family=\"sans-serif\" font-size=\"16\" fill=\"#0f172a\">"
         << config.name << " at t = " << std::fixed << std::setprecision(1) << time_s
-        << " s — blue: right, red: left</text>\n</svg>\n";
+        << " s — blue: right, red: left</text>\n"
+        << "<text x=\"30\" y=\"48\" font-family=\"sans-serif\" font-size=\"13\" fill=\"#475569\">"
+        << "x boundaries: " << boundary_x_name(config.domain.boundary_x)
+        << "; top/bottom: repulsive walls; tails show velocity (0.3 s scale)</text>\n</svg>\n";
 }
 
 }  // namespace
@@ -136,6 +171,8 @@ RunConfig load_run_config(const std::filesystem::path& path) {
     if (!stream) throw std::runtime_error("cannot open configuration " + path.string());
     RunConfig config;
     std::string section;
+    bool saw_boundary_x = false;
+    bool saw_open_x = false;
     std::string line;
     int line_number = 0;
     while (std::getline(stream, line)) {
@@ -152,34 +189,72 @@ RunConfig load_run_config(const std::filesystem::path& path) {
         if (separator == std::string::npos) {
             throw std::runtime_error("invalid configuration at line " + std::to_string(line_number));
         }
-        apply_value(config, section, trim(line.substr(0, separator)), trim(line.substr(separator + 1)));
+        const auto key = trim(line.substr(0, separator));
+        if (section == "domain" && key == "boundary_x") saw_boundary_x = true;
+        if (section == "domain" && key == "open_x") saw_open_x = true;
+        if (saw_boundary_x && saw_open_x) {
+            throw std::runtime_error("use domain.boundary_x or legacy domain.open_x, not both");
+        }
+        apply_value(config, section, key, trim(line.substr(separator + 1)));
     }
     validate(config);
     return config;
 }
 
-void run_experiment(const RunConfig& config) {
+std::vector<Agent> create_population(const RunConfig& config) {
     validate(config);
-    std::filesystem::create_directories(config.output_directory);
-    Simulation simulation(config.domain, config.interactions);
+    std::vector<Agent> population;
+    population.reserve(static_cast<std::size_t>(config.agent_count));
     std::mt19937 generator(config.seed);
     std::normal_distribution<double> speed_distribution(
-        config.desired_speed_mean_m_per_s, config.desired_speed_stddev_m_per_s);
+        config.desired_speed_mean_m_per_s, std::max(config.desired_speed_stddev_m_per_s, kEpsilon));
     std::uniform_real_distribution<double> y_distribution(config.domain.min_y + 0.5, config.domain.max_y - 0.5);
     std::uniform_real_distribution<double> x_offset(0.5, 3.0);
+    std::uniform_real_distribution<double> uniform_x(config.domain.min_x, config.domain.max_x);
     for (int index = 0; index < config.agent_count; ++index) {
         const bool rightward = index % 2 == 0;
-        const double speed = std::max(0.1, speed_distribution(generator));
-        const double x = rightward ? config.domain.min_x + x_offset(generator)
+        const double speed = std::max(0.1, config.desired_speed_stddev_m_per_s == 0.0
+                                              ? config.desired_speed_mean_m_per_s : speed_distribution(generator));
+        double x = rightward ? config.domain.min_x + x_offset(generator)
                                   : config.domain.max_x - x_offset(generator);
         const Vec2 goal{rightward ? config.domain.max_x + 10.0 : config.domain.min_x - 10.0, y_distribution(generator)};
-        simulation.add_agent(Agent({.id = static_cast<std::uint64_t>(index), .position = {x, y_distribution(generator)},
+        double y = y_distribution(generator);
+        if (config.initial_placement == "uniform") {
+            bool placed = false;
+            for (int attempt = 0; attempt < 100000 && !placed; ++attempt) {
+                x = uniform_x(generator);
+                y = y_distribution(generator);
+                placed = true;
+                for (const auto& other : population) {
+                    Vec2 delta = Vec2{x, y} - other.state().position;
+                    if (config.domain.boundary_x == BoundaryX::periodic) {
+                        const double length = config.domain.max_x - config.domain.min_x;
+                        delta.x -= length * std::round(delta.x / length);
+                    }
+                    if (squared_norm(delta) < config.initial_minimum_separation_m * config.initial_minimum_separation_m) {
+                        placed = false;
+                        break;
+                    }
+                }
+            }
+            if (!placed) throw std::runtime_error("could not place population at requested initial minimum separation");
+        }
+        population.push_back(Agent({.id = static_cast<std::uint64_t>(index), .position = {x, y},
                                     .goal = goal, .desired_speed_m_per_s = speed,
                                     .relaxation_time_s = config.relaxation_time_s,
                                     .maximum_speed_factor = config.maximum_speed_factor,
                                     .direction_mode = config.direction_mode,
                                     .fixed_direction = {rightward ? 1.0 : -1.0, 0.0}}));
     }
+    return population;
+}
+
+void run_experiment(const RunConfig& config) {
+    validate(config);
+    auto population = create_population(config);
+    std::filesystem::create_directories(config.output_directory);
+    Simulation simulation(config.domain, config.interactions);
+    for (auto& agent : population) simulation.add_agent(std::move(agent));
 
     std::ofstream trajectory(config.output_directory / "trajectory.csv");
     if (!trajectory) throw std::runtime_error("cannot write trajectory.csv");
@@ -188,6 +263,7 @@ void run_experiment(const RunConfig& config) {
     double time = 0.0;
     double next_output = 0.0;
     double next_render = 0.0;
+    std::size_t step_index = 0;
     const auto render_frame = [&config, &simulation](double frame_time) {
         std::ostringstream filename;
         filename << "frame_" << std::setw(5) << std::setfill('0')
@@ -197,9 +273,10 @@ void run_experiment(const RunConfig& config) {
     write_frame(trajectory, time, simulation);
     render_frame(time);
     while (time + kEpsilon < config.duration_s) {
-        const double dt = std::min(config.time_step_s, config.duration_s - time);
+        const double next_time = std::min(static_cast<double>(++step_index) * config.time_step_s, config.duration_s);
+        const double dt = next_time - time;
         simulation.step(dt);
-        time += dt;
+        time = next_time;
         if (time + kEpsilon >= next_output + config.trajectory_interval_s) {
             next_output += config.trajectory_interval_s;
             write_frame(trajectory, time, simulation);
@@ -214,6 +291,10 @@ void run_experiment(const RunConfig& config) {
     if (!summary) throw std::runtime_error("cannot write summary.txt");
     summary << "name: " << config.name << '\n' << "scenario: " << config.scenario << '\n'
             << "direction_mode: " << (config.direction_mode == DirectionMode::fixed_vector ? "fixed_vector" : "goal_point") << '\n'
+            << "boundary_x: " << boundary_x_name(config.domain.boundary_x) << '\n'
+            << "initial_placement: " << config.initial_placement << '\n'
+            << "domain_width_m: " << config.domain.max_x - config.domain.min_x << '\n'
+            << "domain_height_m: " << config.domain.max_y - config.domain.min_y << '\n'
             << "seed: " << config.seed << '\n' << "agents: " << simulation.agent_count() << '\n'
             << "duration_s: " << config.duration_s << '\n' << "time_step_s: " << config.time_step_s << '\n'
             << "trajectory: trajectory.csv\nrender: final_state.svg\n";

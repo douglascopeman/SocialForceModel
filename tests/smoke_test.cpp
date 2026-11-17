@@ -32,6 +32,32 @@ int main(int argc, char** argv) {
             "configuration reader selects fixed-vector mode");
     const sfm::RectangularDomain domain{.min_x = -100.0, .max_x = 100.0, .min_y = -100.0, .max_y = 100.0};
 
+    {
+        auto config = sfm::load_run_config(argv[2]);
+        config.initial_placement = "uniform";
+        config.domain.boundary_x = sfm::BoundaryX::periodic;
+        config.agent_count = 80;
+        config.desired_speed_stddev_m_per_s = 0.0;
+        const auto first = sfm::create_population(config);
+        const auto repeat = sfm::create_population(config);
+        require(first.size() == 80, "uniform placement creates requested population");
+        int rightward = 0;
+        for (std::size_t i = 0; i < first.size(); ++i) {
+            const auto& state = first[i].state();
+            require(near(state.position.x, repeat[i].state().position.x) && near(state.position.y, repeat[i].state().position.y),
+                    "uniform placement is reproducible with the same seed");
+            require(near(state.desired_speed_m_per_s, config.desired_speed_mean_m_per_s), "zero speed dispersion is supported");
+            rightward += state.fixed_direction.x > 0.0;
+            for (std::size_t j = 0; j < i; ++j) {
+                auto delta = state.position - first[j].state().position;
+                const double length = config.domain.max_x - config.domain.min_x;
+                delta.x -= length * std::round(delta.x / length);
+                require(sfm::norm(delta) >= config.initial_minimum_separation_m, "uniform placement respects periodic minimum separation");
+            }
+        }
+        require(rightward == 40, "uniform placement preserves equally sized opposing populations");
+    }
+
     {  // The objective changes steering after displacement, independently of the goal.
         sfm::Simulation simulation(domain);
         auto agent = make_agent(1, {0.0, 2.0}, {10.0, 0.0});

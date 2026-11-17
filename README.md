@@ -84,3 +84,67 @@ For a separate comparison run without overwriting the original outputs:
 ```
 
 Outputs go to `results/bidirectional-fixed-vector-smoke/`.
+
+## Periodic channel and animation
+
+Choose x boundaries in `[domain]` with `boundary_x = "open"`, `"walls"`, or
+`"periodic"`. Periodic boundaries wrap x into the domain after each step and use
+the nearest periodic image for pair interactions, including the elliptical
+anticipation term. Identity and velocity persist through a crossing; the agent
+count stays constant. Top and bottom retain their existing soft repulsive walls.
+The periodic domain uses a single nearest image, so choose a channel length
+well above interaction and anticipation distances.
+
+Periodic runs currently require `direction_mode = "fixed_vector"`; point-goal
+steering with periodic geometry requires a further goal convention. Legacy
+`open_x = true/false` maps to open/walls; setting both boundary keys is rejected.
+
+The longer example uses 40 pedestrians in a 20 m by 6 m domain for 60 s, at
+`dt = 0.01 s`, saving trajectory/render samples every 0.2 s:
+
+```bash
+./build/sfm_sim config/periodic_counterflow.toml
+python3 scripts/check_periodic_run.py results/periodic-counterflow --length 20 --agents 40
+python3 scripts/animate_run.py results/periodic-counterflow --fps 20
+```
+
+The animation helper requires Python 3, `rsvg-convert`, and FFmpeg with an H.264
+encoder. It creates `animation_frames/*.png`, `evolution.mp4`, and `evolution.gif`
+inside the run directory. At 20 fps, 0.2 s simulation samples play at 4x speed.
+SVG/PNG frames use equal spatial scale on both axes. Dashed vertical edges mark
+the periodic join; colours indicate desired direction and short lines show
+realized velocity. The original end-group initialisation is retained, so this
+run begins with a transient concentration near the join.
+
+`validation.json` checks finite states, wrapped x coordinates, fixed population
+and identities, and reports crossings inferred from sampled jumps. Renderings
+and these checks provide a qualitative boundary-condition smoke test;
+hydrodynamic admissibility and timestep convergence of this interacting case
+remain separate scientific checks.
+
+## Lane-formation experiments
+
+`config/lanes/` contains density comparisons and a shorter-anticipation example.
+These start from a mixed population throughout the periodic channel, selected by:
+
+```toml
+[agents]
+initial_placement = "uniform" # Default is the original "end_groups".
+initial_minimum_separation_m = 0.4
+```
+
+Uniform placement rejects positions closer than the requested distance to any
+existing agent, including across the periodic join. It does not assign lanes.
+The run fails explicitly if the requested population cannot be placed.
+
+To reproduce the promising 80-agent experiment:
+
+```bash
+./build/sfm_sim config/lanes/n080-short-anticipation.toml
+python3 scripts/analyse_lanes.py results/lanes-n080-short-anticipation
+python3 scripts/animate_run.py results/lanes-n080-short-anticipation --fps 20
+```
+
+This run changes anticipation time to 0.5 s (the paper uses 2 s) and timestep
+to 0.002 s; it runs for 180 s. See [the experiment notes](docs/lane-experiments.md)
+for comparison settings, the exploratory segregation metric and limitations.

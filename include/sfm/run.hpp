@@ -2,7 +2,9 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
+#include "sfm/agent.hpp"
 #include "sfm/model.hpp"
 #include "sfm/types.hpp"
 
@@ -19,9 +21,11 @@ struct RunConfig {
     double render_interval_s{2.0};
     std::filesystem::path output_directory{"results/unnamed"};
     RectangularDomain domain{.min_x = 0.0, .max_x = 20.0, .min_y = 0.0, .max_y = 10.0,
-                             .wall_left = false, .wall_right = false};
+                             .boundary_x = BoundaryX::open};
     InteractionParameters interactions{};
     int agent_count{40};
+    std::string initial_placement{"end_groups"};
+    double initial_minimum_separation_m{0.4};
     double desired_speed_mean_m_per_s{1.34};
     double desired_speed_stddev_m_per_s{0.26};
     double relaxation_time_s{0.5};
@@ -29,6 +33,7 @@ struct RunConfig {
 };
 
 [[nodiscard]] RunConfig load_run_config(const std::filesystem::path& path);
+[[nodiscard]] std::vector<Agent> create_population(const RunConfig& config);
 void run_experiment(const RunConfig& config);
 
 }  // namespace sfm

@@ -2,6 +2,17 @@
 
 namespace sfm {
 
+enum class BoundaryX { open, walls, periodic };
+
+constexpr const char* boundary_x_name(BoundaryX boundary) noexcept {
+    switch (boundary) {
+        case BoundaryX::open: return "open";
+        case BoundaryX::walls: return "walls";
+        case BoundaryX::periodic: return "periodic";
+    }
+    return "unknown";
+}
+
 struct InteractionParameters {
     double pair_potential_amplitude_m2_per_s2{2.1};
     double pair_range_m{0.3};
@@ -17,8 +28,7 @@ struct RectangularDomain {
     double max_x{10.0};
     double min_y{0.0};
     double max_y{10.0};
-    bool wall_left{true};
-    bool wall_right{true};
+    BoundaryX boundary_x{BoundaryX::walls};
     bool wall_bottom{true};
     bool wall_top{true};
 };

@@ -36,4 +36,13 @@ if(SFM_BUILD_TESTS)
     add_test(NAME smoke COMMAND sfm_smoke_test
         ${CMAKE_CURRENT_SOURCE_DIR}/config/example.toml
         ${CMAKE_CURRENT_SOURCE_DIR}/config/bidirectional_fixed_vector_smoke.toml)
+    add_executable(sfm_periodic_test tests/periodic_test.cpp)
+    target_link_libraries(sfm_periodic_test PRIVATE sfm_core)
+    add_test(NAME periodic COMMAND sfm_periodic_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/periodic_counterflow.toml)
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME lane_analysis COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lane_analysis.py)
+    endif()
 endif()
