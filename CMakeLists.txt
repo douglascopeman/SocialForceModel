@@ -13,6 +13,7 @@ add_library(sfm_core
     src/simulation.cpp
     src/run.cpp
     src/coarse_graining.cpp
+    src/field_output.cpp
     src/admissibility.cpp
 )
 
@@ -31,6 +32,9 @@ target_link_libraries(sfm_sim PRIVATE sfm_core)
 
 if(SFM_BUILD_TESTS)
     enable_testing()
+    add_executable(sfm_coarse_graining_test tests/coarse_graining_test.cpp)
+    target_link_libraries(sfm_coarse_graining_test PRIVATE sfm_core)
+    add_test(NAME coarse_graining COMMAND sfm_coarse_graining_test)
     add_executable(sfm_smoke_test tests/smoke_test.cpp)
     target_link_libraries(sfm_smoke_test PRIVATE sfm_core)
     add_test(NAME smoke COMMAND sfm_smoke_test
@@ -46,6 +50,8 @@ if(SFM_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/config/unidirectional_periodic.toml)
     find_package(Python3 QUIET COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME field_output COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_field_output.py $<TARGET_FILE:sfm_sim>)
         add_test(NAME lane_analysis COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_lane_analysis.py)
         add_test(NAME periodic_validation COMMAND ${Python3_EXECUTABLE}

@@ -54,10 +54,39 @@ writes the following ignored artefacts to `results/bidirectional-smoke/`:
   agents target left).
 - `frame_*.svg` — timestamped renders at the configured output interval.
 
-The configuration reader intentionally supports only the scalar TOML fields
-used by the supplied example configurations. Unsupported keys are ignored at
-this stage; a full TOML library or schema validation is a later engineering
-decision.
+The configuration reader supports the scalar TOML fields used by the examples
+and a single-line string array for coarse-grained field selection. Unknown
+`[coarse_graining]` keys are rejected; unsupported keys elsewhere are ignored.
+A full TOML library or schema validation is a later engineering decision.
+
+## Dynamic macroscopic fields
+
+Add a `[coarse_graining]` section to compute and save fields during a run:
+
+```toml
+[coarse_graining]
+enabled = true # Defaults to false.
+fields = ["density", "velocity", "polarisation"]
+grid_spacing_m = 0.5
+kernel = "gaussian"
+kernel_width_m = 0.5 # Standard deviation on each axis.
+kernel_cutoff_sigma = 3.0
+window_s = 1.0 # Non-overlapping duration-weighted windows.
+boundary_policy = "renormalize" # Or "truncate" at nonperiodic edges.
+```
+
+Any nonempty subset of fields can be selected. Velocity uses realised motion;
+polarisation is the weighted mean unit-velocity vector and its magnitude.
+Output goes to `fields/`, with one CSV per window, a `windows.csv` index and
+`metadata.json`. Empty conditional fields are `nan`; support columns accompany
+every cell. Enabling fields leaves microscopic trajectories unchanged.
+
+```bash
+./build/sfm_sim config/macroscopic_smoke.toml
+```
+
+See [the estimator and output conventions](docs/coarse-graining.md) for kernel
+integration, periodic and physical boundaries, conservation, and support limits.
 
 ## Direction objective
 

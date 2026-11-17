@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "sfm/agent.hpp"
+#include "sfm/coarse_graining.hpp"
 #include "sfm/model.hpp"
 #include "sfm/types.hpp"
 
@@ -30,6 +31,7 @@ struct RunConfig {
     double desired_speed_stddev_m_per_s{0.26};
     double relaxation_time_s{0.5};
     double maximum_speed_factor{1.3};
+    CoarseGrainingConfig coarse_graining{};
 };
 
 [[nodiscard]] RunConfig load_run_config(const std::filesystem::path& path);

@@ -19,10 +19,14 @@ trajectory_interval_s = 0.1
 directory = "results/free-flow-smoke"
 
 [coarse_graining]
+enabled = false
+fields = ["density", "velocity", "polarisation"]
 grid_spacing_m = 0.25
 kernel = "gaussian"
 kernel_width_m = 0.5
+kernel_cutoff_sigma = 3.0
 window_s = 1.0
+boundary_policy = "renormalize"
 
 [admissibility]
 minimum_effective_samples = 20

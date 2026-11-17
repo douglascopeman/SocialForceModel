@@ -49,6 +49,12 @@ Also output momentum density, velocity covariance/granular stress proxy, sample
 count/effective sample size, and kernel/boundary metadata. Verify conservation
 against particle totals away from boundaries.
 
+Initial implementation: configurable in-run density, realised velocity and
+polarisation, with cell-integrated Gaussian smoothing, non-overlapping temporal
+windows, periodic image sums, configurable nonperiodic boundary treatment,
+support counts and conservation totals. See `docs/coarse-graining.md`.
+Momentum density and velocity covariance/stress remain to complete this milestone.
+
 ### M4 — Hydrodynamic admissibility diagnostics
 
 At each cell/window and across replicate runs, evaluate:

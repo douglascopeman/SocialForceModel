@@ -4,6 +4,7 @@
 #include <cctype>
 #include <fstream>
 #include <iomanip>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -12,6 +13,7 @@
 
 #include "sfm/simulation.hpp"
 #include "sfm/geometry.hpp"
+#include "sfm/field_output.hpp"
 
 namespace sfm {
 namespace {
@@ -45,10 +47,50 @@ bool as_bool(const std::string& value, std::string_view key) {
     throw std::runtime_error("invalid Boolean for " + std::string(key));
 }
 
+std::vector<MacroscopicField> as_fields(const std::string& value) {
+    if (value.size() < 2 || value.front() != '[' || value.back() != ']') {
+        throw std::runtime_error("coarse_graining.fields requires a single-line array of quoted field names");
+    }
+    std::vector<MacroscopicField> result;
+    std::string contents = trim(value.substr(1, value.size() - 2));
+    while (!contents.empty()) {
+        if (contents.front() != '"') throw std::runtime_error("coarse_graining.fields requires quoted field names");
+        const auto end = contents.find('"', 1);
+        if (end == std::string::npos) throw std::runtime_error("unterminated coarse_graining field name");
+        result.push_back(parse_field(contents.substr(1, end - 1)));
+        contents = trim(contents.substr(end + 1));
+        if (contents.empty()) break;
+        if (contents.front() != ',') throw std::runtime_error("missing comma in coarse_graining.fields");
+        contents = trim(contents.substr(1));
+    }
+    return result;
+}
+
+double coarse_number(const std::string& value, const std::string& key) {
+    std::size_t end = 0;
+    double result;
+    try { result = std::stod(value, &end); }
+    catch (const std::exception&) { throw std::runtime_error("invalid number for " + key); }
+    if (end != value.size() || !std::isfinite(result)) throw std::runtime_error("invalid finite number for " + key);
+    return result;
+}
+
 void apply_value(RunConfig& config, const std::string& section, const std::string& key,
                  const std::string& value) {
     const std::string full_key = section.empty() ? key : section + "." + key;
-    if (full_key == "run.name") config.name = unquote(value);
+    if (section == "coarse_graining") {
+        auto& coarse = config.coarse_graining;
+        if (key == "enabled") coarse.enabled = as_bool(value, full_key);
+        else if (key == "fields") coarse.fields = as_fields(value);
+        else if (key == "grid_spacing_m") coarse.grid_spacing_m = coarse_number(value, full_key);
+        else if (key == "kernel") coarse.kernel = unquote(value);
+        else if (key == "kernel_width_m") coarse.kernel_width_m = coarse_number(value, full_key);
+        else if (key == "kernel_cutoff_sigma") coarse.kernel_cutoff_sigma = coarse_number(value, full_key);
+        else if (key == "window_s") coarse.window_s = coarse_number(value, full_key);
+        else if (key == "boundary_policy") coarse.boundary_policy = unquote(value);
+        else throw std::runtime_error("unknown configuration key: " + full_key);
+    }
+    else if (full_key == "run.name") config.name = unquote(value);
     else if (full_key == "run.seed") config.seed = static_cast<unsigned int>(as_double(value, full_key));
     else if (full_key == "run.duration_s") config.duration_s = as_double(value, full_key);
     else if (full_key == "run.time_step_s") config.time_step_s = as_double(value, full_key);
@@ -95,6 +137,7 @@ void apply_value(RunConfig& config, const std::string& section, const std::strin
 }
 
 void validate(const RunConfig& config) {
+    if (config.coarse_graining.enabled) validate_coarse_graining(config.coarse_graining, config.domain);
     if (config.duration_s <= 0.0 || config.time_step_s <= 0.0 || config.trajectory_interval_s <= 0.0 ||
         config.render_interval_s <= 0.0 ||
         config.agent_count <= 0 || config.desired_speed_mean_m_per_s <= 0.0 ||
@@ -263,6 +306,9 @@ void run_experiment(const RunConfig& config) {
     Simulation simulation(config.domain, config.interactions);
     for (auto& agent : population) simulation.add_agent(std::move(agent));
 
+    std::optional<FieldOutput> fields;
+    if (config.coarse_graining.enabled) fields.emplace(config.output_directory, config.domain, config.coarse_graining);
+
     std::ofstream trajectory(config.output_directory / "trajectory.csv");
     if (!trajectory) throw std::runtime_error("cannot write trajectory.csv");
     trajectory << "time_s,agent_id,x_m,y_m,vx_m_per_s,vy_m_per_s,wx_m_per_s,wy_m_per_s\n";
@@ -283,6 +329,7 @@ void run_experiment(const RunConfig& config) {
         const double next_time = std::min(static_cast<double>(++step_index) * config.time_step_s, config.duration_s);
         const double dt = next_time - time;
         simulation.step(dt);
+        if (fields) fields->sample(simulation.agents(), dt);
         time = next_time;
         if (time + kEpsilon >= next_output + config.trajectory_interval_s) {
             next_output += config.trajectory_interval_s;
@@ -293,6 +340,7 @@ void run_experiment(const RunConfig& config) {
             render_frame(time);
         }
     }
+    if (fields) fields->finish();
     write_svg(config.output_directory / "final_state.svg", config, simulation, time);
     std::ofstream summary(config.output_directory / "summary.txt");
     if (!summary) throw std::runtime_error("cannot write summary.txt");
@@ -307,6 +355,8 @@ void run_experiment(const RunConfig& config) {
             << "duration_s: " << config.duration_s << '\n' << "time_step_s: " << config.time_step_s << '\n'
             << "pair_force_evaluations: " << simulation.encounter_statistics().pair_force_evaluations << '\n'
             << "upward_tie_breaks: " << simulation.encounter_statistics().upward_tie_breaks << '\n'
+            << "macroscopic_fields_enabled: " << (config.coarse_graining.enabled ? "true" : "false") << '\n'
+            << (config.coarse_graining.enabled ? "macroscopic_fields: fields/windows.csv\n" : "")
             << "trajectory: trajectory.csv\nrender: final_state.svg\n";
 }
 

@@ -1,0 +1,36 @@
+# Small fully periodic example with dynamic macroscopic output.
+[run]
+name = "macroscopic-smoke"
+seed = 20261117
+duration_s = 5.0
+time_step_s = 0.01
+
+[scenario]
+type = "bidirectional"
+direction_mode = "fixed_vector"
+
+[domain]
+width_m = 12.0
+height_m = 6.0
+boundary_x = "periodic"
+boundary_y = "periodic"
+
+[agents]
+count = 20
+initial_placement = "uniform"
+initial_minimum_separation_m = 0.4
+
+[output]
+directory = "results/macroscopic-smoke"
+trajectory_interval_s = 0.1
+render_interval_s = 0.5
+
+[coarse_graining]
+enabled = true
+fields = ["density", "velocity", "polarisation"]
+grid_spacing_m = 0.5
+kernel = "gaussian"
+kernel_width_m = 0.5
+kernel_cutoff_sigma = 3.0
+window_s = 0.5
+boundary_policy = "renormalize"

@@ -55,6 +55,6 @@ The renderer draws periodic joins as dashed edges in both axes and records
 both boundary settings in the run summary. `check_periodic_run.py --height 10`
 additionally checks that y is wrapped and reports transverse seam crossings.
 
-Coarse-grained field estimation is still a later milestone. Its kernels and
-grid indexing must use the same periodic geometry; this implementation does not
-yet calculate macroscopic fields or claim hydrodynamic admissibility.
+Optional coarse-grained fields now use this periodic geometry for grid membership
+and kernel image sums on both axes. See [coarse-graining.md](coarse-graining.md).
+Macroscopic output does not yet assess hydrodynamic admissibility.
